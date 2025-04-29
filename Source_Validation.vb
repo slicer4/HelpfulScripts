@@ -119,8 +119,21 @@ Sub UpdateValidationTable()
     colCount = tblValidation.ListColumns.Count
 
     If tblValidation.ListRows.Count > 1 Then
-        tblValidation.ListRows(1).Range.Offset(0, 1).Resize(1, colCount - 1).Copy
-        tblValidation.ListRows(2).Range.Offset(0, 1).Resize(tblValidation.ListRows.Count - 1, colCount - 1).PasteSpecial xlPasteFormulas
+        Dim rFirstRow As Range
+        Set rFirstRow = tblValidation.ListRows(1).Range
+    
+        Dim col As ListColumn
+        Dim formulaText As String
+        Dim iRow As Long, iCol As Long
+    
+        For iCol = 2 To colCount ' Start at 2 to skip first column
+            formulaText = rFirstRow.Cells(1, iCol).Formula
+            If formulaText <> "" Then
+                For iRow = 2 To tblValidation.ListRows.Count
+                    tblValidation.DataBodyRange.Cells(iRow, iCol).Formula = formulaText
+                Next iRow
+            End If
+        Next iCol
     End If
 
 CleanExit:
