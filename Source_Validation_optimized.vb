@@ -1,12 +1,14 @@
 Sub UpdateSource_ValidationTables()
     ' === Constants ===
-    Const SRC_WS As String = "CMDB Export"
-    Const DATA_WS As String = "Source Data"
-    Const VALID_WS As String = "Validation"
-    Const SRC_TBL As String = "SourceData"
-    Const VALID_TBL As String = "Validation"
+    Const SHEET_CMDB As String = "CMDB Export"
+    Const SHEET_SOURCE As String = "Source Data"
+    Const SHEET_VALIDATION As String = "Validation"
+    Const TABLE_SOURCE As String = "SourceData"
+    Const TABLE_VALIDATION As String = "Validation"
+    Const COLUMN_NUMBER As String = "Number"
+    Const COLUMN_URL_TYPE As String = "URL Type"
 
-    ' === Variables ===
+    ' === Variable declarations ===
     Dim wsSource As Worksheet, wsTable As Worksheet, wsValidation As Worksheet
     Dim tblSource As ListObject, tblValidation As ListObject
     Dim lastRow As Long, colCount As Long
@@ -15,116 +17,111 @@ Sub UpdateSource_ValidationTables()
     Dim dict As Object
     Dim arrSource() As Variant, arrValidation() As Variant
     Dim i As Long, j As Long
+    Dim key As Variant
     Dim topRow As Range
-    Dim Key As Variant
 
-    ' === Performance Settings ===
-    With Application
-        .ScreenUpdating = False
-        .Calculation = xlCalculationManual
-        .EnableEvents = False
-    End With
+    ' === Preserve Excel state ===
+    Dim calcState As XlCalculation
+    Dim screenUpdateState As Boolean, eventsState As Boolean
+    screenUpdateState = Application.ScreenUpdating
+    calcState = Application.Calculation
+    eventsState = Application.EnableEvents
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
 
-    ' === Setup Worksheets and Tables ===
-    Set wsSource = ThisWorkbook.Sheets(SRC_WS)
-    Set wsTable = ThisWorkbook.Sheets(DATA_WS)
-    Set wsValidation = ThisWorkbook.Sheets(VALID_WS)
+    On Error GoTo Cleanup
 
-    Set tblSource = wsTable.ListObjects(SRC_TBL)
-    Set tblValidation = wsValidation.ListObjects(VALID_TBL)
+    ' === Set worksheets and tables ===
+    Set wsSource = ThisWorkbook.Sheets(SHEET_CMDB)
+    Set wsTable = ThisWorkbook.Sheets(SHEET_SOURCE)
+    Set tblSource = wsTable.ListObjects(TABLE_SOURCE)
+    Set wsValidation = ThisWorkbook.Sheets(SHEET_VALIDATION)
+    Set tblValidation = wsValidation.ListObjects(TABLE_VALIDATION)
 
-    ' === Step 1: Copy Data to SourceData Table ===
+    ' === Determine source data range ===
     lastRow = wsSource.Cells(wsSource.Rows.Count, "A").End(xlUp).Row
+    colCount = wsSource.Cells(1, wsSource.Columns.Count).End(xlToLeft).Column
 
-    If lastRow > 1 Then
-        colCount = wsSource.Cells(1, wsSource.Columns.Count).End(xlToLeft).Column
-        Set dataRange = wsSource.Range("A2").Resize(lastRow - 1, colCount)
-
-        ' Clear old data
-        If tblSource.ListRows.Count > 0 Then
-            tblSource.DataBodyRange.ClearContents
-        Else
-            ' Add one row so DataBodyRange is not Nothing
-            tblSource.ListRows.Add
-        End If
-
-        ' Resize table to match new data
-        tblSource.Resize tblSource.HeaderRowRange.Resize(, colCount)
-
-        ' Write new data
-        Set rngSource = tblSource.DataBodyRange.Cells(1, 1)
-        rngSource.Resize(dataRange.Rows.Count, dataRange.Columns.Count).Value = dataRange.Value
-
-        ' Sort by Number, then URL Type
-        With tblSource.Sort
-            .SortFields.Clear
-            .SortFields.Add Key:=tblSource.ListColumns("Number").Range, Order:=xlAscending
-            .SortFields.Add Key:=tblSource.ListColumns("URL Type").Range, Order:=xlAscending
-            .Header = xlYes
-            .Apply
-        End With
-
-    Else
-        MsgBox "No data to copy from 'CMDB Export' sheet.", vbInformation
+    If lastRow <= 1 Then
+        MsgBox "No data to copy from 'CMDB Export' sheet.", vbExclamation
         GoTo Cleanup
     End If
 
-    ' === Step 2: Update Validation Table ===
+    Set dataRange = wsSource.Range("A2").Resize(lastRow - 1, colCount)
 
-    ' Collect unique 'Number' values from SourceData table
-    Set rngSource = tblSource.ListColumns("Number").DataBodyRange
+    ' === Prepare SourceData table ===
+    If tblSource.ListRows.Count > 0 Then
+        tblSource.DataBodyRange.Delete
+    Else
+        tblSource.ListRows.Add
+    End If
+
+    tblSource.Resize tblSource.HeaderRowRange.Resize(dataRange.Rows.Count + 1, dataRange.Columns.Count)
+    tblSource.DataBodyRange.Cells(1, 1).Resize(dataRange.Rows.Count, dataRange.Columns.Count).Value = dataRange.Value
+
+    ' === Sort the SourceData table ===
+    With tblSource.Sort
+        .SortFields.Clear
+        .SortFields.Add Key:=tblSource.ListColumns(COLUMN_NUMBER).Range, SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+        .SortFields.Add Key:=tblSource.ListColumns(COLUMN_URL_TYPE).Range, SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+        .Header = xlYes
+        .MatchCase = False
+        .Orientation = xlTopToBottom
+        .SortMethod = xlPinYin
+        .Apply
+    End With
+
+    MsgBox "SourceData table updated successfully!", vbInformation
+
+    ' === Build dictionary of unique 'Number' values ===
+    Set rngSource = tblSource.ListColumns(COLUMN_NUMBER).DataBodyRange
     arrSource = rngSource.Value
     Set dict = CreateObject("Scripting.Dictionary")
 
     For i = 1 To UBound(arrSource, 1)
-        If Len(Trim(arrSource(i, 1))) > 0 Then
-            If Not dict.Exists(arrSource(i, 1)) Then
-                dict.Add arrSource(i, 1), arrSource(i, 1)
-            End If
+        If Not dict.exists(arrSource(i, 1)) Then
+            dict.Add arrSource(i, 1), arrSource(i, 1)
         End If
     Next i
 
-    ' Prepare array for Validation table
+    ' === Update Validation table ===
+    If tblValidation.ListRows.Count > 0 Then
+        tblValidation.DataBodyRange.Delete
+    Else
+        tblValidation.ListRows.Add
+    End If
+
+    ' Prepare array of unique values
     ReDim arrValidation(1 To dict.Count, 1 To 1)
     j = 1
-    For Each Key In dict.Keys
-        arrValidation(j, 1) = Key
+    For Each key In dict.Keys
+        arrValidation(j, 1) = key
         j = j + 1
-    Next Key
+    Next key
 
-    ' Clear existing data (except header) from Validation table
-    If tblValidation.ListRows.Count > 0 Then
-        tblValidation.DataBodyRange.ClearContents
-    End If
+    ' Resize validation table
+    tblValidation.Resize tblValidation.HeaderRowRange.Resize(UBound(arrValidation, 1) + 1, 1)
+    tblValidation.DataBodyRange.Value = arrValidation
 
-    ' Resize table if needed
-    If tblValidation.ListRows.Count < dict.Count Then
-        For i = tblValidation.ListRows.Count + 1 To dict.Count
-            tblValidation.ListRows.Add
-        Next i
-    ElseIf tblValidation.ListRows.Count > dict.Count Then
-        For i = tblValidation.ListRows.Count To dict.Count + 1 Step -1
-            tblValidation.ListRows(i).Delete
-        Next i
-    End If
-
-    ' Write unique numbers to Validation table
-    tblValidation.DataBodyRange.Columns(1).Value = arrValidation
-
-    ' Copy formulas from first data row to remaining rows (columns 2 and onward)
-    Set topRow = tblValidation.ListRows(1).Range
+    ' Copy formulas from first data row (if applicable)
     If tblValidation.ListRows.Count > 1 Then
-        topRow.Offset(1, 1).Resize(tblValidation.ListRows.Count - 1, tblValidation.ListColumns.Count - 1).Formula = _
-            topRow.Offset(0, 1).Resize(1, tblValidation.ListColumns.Count - 1).Formula
+        Set topRow = tblValidation.ListRows(1).Range
+        If tblValidation.ListColumns.Count > 1 Then
+            topRow.Offset(0, 1).Resize(1, tblValidation.ListColumns.Count - 1).Copy
+            tblValidation.DataBodyRange.Offset(1, 1).Resize(tblValidation.ListRows.Count - 1, tblValidation.ListColumns.Count - 1).PasteSpecial xlPasteFormulas
+        End If
     End If
 
-    MsgBox "SourceData and Validation tables updated successfully!", vbInformation
+    MsgBox "Validation table updated successfully!", vbInformation
 
 Cleanup:
-    ' === Restore Settings ===
-    With Application
-        .ScreenUpdating = True
-        .Calculation = xlCalculationAutomatic
-        .EnableEvents = True
-    End With
+    ' === Restore Excel state ===
+    Application.ScreenUpdating = screenUpdateState
+    Application.Calculation = calcState
+    Application.EnableEvents = eventsState
+
+    If Err.Number <> 0 Then
+        MsgBox "An error occurred: " & Err.Description, vbCritical
+    End If
 End Sub
