@@ -43,11 +43,17 @@ Sub UpdateSource_ValidationTables()
         ' Clear old data
         If tblSource.ListRows.Count > 0 Then
             tblSource.DataBodyRange.ClearContents
+        Else
+            ' Add one row so DataBodyRange is not Nothing
+            tblSource.ListRows.Add
         End If
 
-        ' Resize and load data
+        ' Resize table to match new data
         tblSource.Resize tblSource.HeaderRowRange.Resize(, colCount)
-        tblSource.DataBodyRange.Cells(1, 1).Resize(dataRange.Rows.Count, dataRange.Columns.Count).Value = dataRange.Value
+
+        ' Write new data
+        Set rngSource = tblSource.DataBodyRange.Cells(1, 1)
+        rngSource.Resize(dataRange.Rows.Count, dataRange.Columns.Count).Value = dataRange.Value
 
         ' Sort by Number, then URL Type
         With tblSource.Sort
