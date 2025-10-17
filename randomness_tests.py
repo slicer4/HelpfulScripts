@@ -98,4 +98,42 @@ class NumPyRandomnessValidator:
         expected_runs = ((2 * n1 * n2) / (n1 + n2)) + 1
         
         # Standard deviation of runs
-        std_runs = np.sqrt((2 * n1 * n2 * (2 * n1 * n2 - n1
+        std_runs = np.sqrt((2 * n1 * n2 * (2 * n1 * n2 - n1 - n2 + 1)) / 
+                           ((n1 + n2)**2 * (n1 + n2 - 1)))
+        
+        # Z-score for runs
+        z_score = (runs - expected_runs) / std_runs
+        
+        # Two-tailed p-value
+        p_value = 2 * (1 - stats.norm.cdf(abs(z_score)))
+        
+        print("\nRuns Test:")
+        print(f"Observed Runs: {runs}")
+        print(f"Expected Runs: {expected_runs:.2f}")
+        print(f"Standard Deviation of Runs: {std_runs:.4f}")
+        print(f"Z-score: {z_score:.4f}")
+        print(f"P-value: {p_value:.4f}")
+        print("Interpretation:")
+        
+        if p_value > 0.05:
+            print("✓ Sequence appears random (fails to reject randomness)")
+        else:
+            print("⚠ Significant evidence against randomness")
+        
+        return {
+            'observed_runs': runs,
+            'expected_runs': expected_runs,
+            'z_score': z_score,
+            'p_value': p_value,
+            'is_random': p_value > 0.05
+        }
+    
+    # Optional: Complete method to run all tests
+    def run_all_tests(self):
+        """Run all randomness tests and compile results"""
+        results = {
+            'ks_test': self.kolmogorov_smirnov_test(),
+            'chi_squared_test': self.chi_squared_test(),
+            'runs_test': self.runs_test()
+        }
+        return results
